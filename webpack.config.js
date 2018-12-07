@@ -6,7 +6,6 @@ const nodeModulesRoot = path.resolve(__dirname, 'node_modules');
 const config = {
     entry: {
         'main': './static/basic/index',
-        'control-panel': './static/control-panel/index',
     },
 
     output: {
