@@ -96,7 +96,9 @@ class Terminal:
 
         self._escape_sequences = {}
         for k, v in sequences['escape_sequences'].items():
-            self._escape_sequences[k.replace('\\E', '\x1b')] = v
+            k = (k.replace('\\E', '\x1b')
+                  .replace('\\shift_in', '\x0f'))
+            self._escape_sequences[k] = v
 
         self._escape_sequences_re = []
         for k, v in sequences['escape_sequences_re'].items():

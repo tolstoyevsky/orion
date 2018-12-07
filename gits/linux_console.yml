@@ -28,6 +28,7 @@ escape_sequences:
   '\E[4h': 'smir'
   '\E[4l': 'rmir'
 
+  '\E[m\shift_in': 'default_rendition'
   '\E[0m': 'default_rendition'
   '\E[1m': 'bold'
   '\E[2m': 'dim'
