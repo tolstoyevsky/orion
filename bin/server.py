@@ -43,12 +43,10 @@ class IndexHandler(tornado.web.RequestHandler):
 
 
 class TermSocketHandler(WebSocketHandler):
-    clients = {}
-
     def __init__(self, application, request, **kwargs):
         WebSocketHandler.__init__(self, application, request, **kwargs)
 
-        self._fd = None
+        self._fd = self._pid = self._terminal = None
         self._io_loop = IOLoop.current()
 
     def _create(self, rows=24, cols=80):
@@ -64,25 +62,21 @@ class TermSocketHandler(WebSocketHandler):
             }
             os.execvpe(cmd[0], cmd, env)
         else:
+            self._pid = pid
+            self._terminal = Terminal(rows, cols)
+
             fcntl.fcntl(fd, fcntl.F_SETFL, os.O_NONBLOCK)
             fcntl.ioctl(fd, termios.TIOCSWINSZ,
                         struct.pack('HHHH', rows, cols, 0, 0))
-            TermSocketHandler.clients[fd] = {
-                'client': self,
-                'pid': pid,
-                'terminal': Terminal(rows, cols)
-            }
 
             return fd
 
     def _destroy(self, fd):
         try:
-            os.kill(TermSocketHandler.clients[fd]['pid'], signal.SIGHUP)
+            os.kill(self._pid, signal.SIGHUP)
             os.close(fd)
         except OSError:
             pass
-
-        del TermSocketHandler.clients[fd]
 
     # Implementing the methods inherited from
     # tornado.websocket.WebSocketHandler
@@ -90,9 +84,8 @@ class TermSocketHandler(WebSocketHandler):
     def open(self):
         def callback(*args, **kwargs):
             buf = os.read(self._fd, 65536)
-            client = TermSocketHandler.clients[self._fd]
-            html = client['terminal'].generate_html(buf)
-            client['client'].write_message(html)
+            html = self._terminal.generate_html(buf)
+            self.write_message(html)
 
         self._fd = self._create()
         self._io_loop.add_handler(self._fd, callback, self._io_loop.READ)
