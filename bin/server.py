@@ -17,7 +17,6 @@ import fcntl
 import os
 import pty
 import signal
-import socket  # only for gethostname()
 import struct
 import sys
 import termios
@@ -55,21 +54,7 @@ class TermSocketHandler(WebSocketHandler):
     def _create(self, rows=24, cols=80):
         pid, fd = pty.fork()
         if pid == 0:
-            if os.getuid() == 0:
-                cmd = ['/bin/login']
-            else:
-                # The prompt has to end with a newline character.
-                sys.stdout.write(socket.gethostname() + ' login: \n')
-                login = sys.stdin.readline().strip()
-
-                cmd = [
-                    'ssh',
-                    '-oPreferredAuthentications=keyboard-interactive,password',
-                    '-oNoHostAuthenticationForLocalhost=yes',
-                    '-oLogLevel=FATAL',
-                    '-F/dev/null',
-                    '-l', login, 'localhost',
-                ]
+            cmd = ['/bin/login']
 
             env = {
                 'COLUMNS': str(cols),
@@ -137,6 +122,10 @@ class Application(tornado.web.Application):
 
 
 def main():
+    if os.getuid() != 0:
+        sys.stderr.write('{} must run as root\n'.format(sys.argv[0]))
+        sys.exit(1)
+
     tornado.options.parse_command_line()
 
     http_server = tornado.httpserver.HTTPServer(Application())
