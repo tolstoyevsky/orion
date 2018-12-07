@@ -1,0 +1,36 @@
+{
+  "name": "gits-client",
+  "version": "0.4.0",
+  "description": "Gits is a web-based terminal emulator. Gits consists of two parts: a client and a server. Note that the package provides the client.",
+  "main": "static/index.js",
+  "scripts": {
+    "start": "webpack --watch"
+  },
+  "files": [
+    "static/bundles",
+    "templates",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tolstoyevsky/gits.git"
+  },
+  "license": "Apache-2.0",
+  "maintainers": [
+    "Maxim Karpinskiy <karpinski20@gmail.com>"
+  ],
+  "homepage": "https://github.com/tolstoyevsky/gits",
+  "devDependencies": {
+    "babel-core": "^6.21.0",
+    "babel-loader": "^6.2.10",
+    "babel-preset-es2015": "^6.18.0",
+    "css-loader": "^0.26.1",
+    "file-loader": "^0.9.0",
+    "less": "^2.7.1",
+    "less-loader": "^2.2.3",
+    "style-loader": "^0.13.1",
+    "tv-webpack-svg-loader": "^1.0.0-alpha.1",
+    "url-loader": "^0.5.7",
+    "webpack": "^2.2.0-rc.2"
+  }
+}

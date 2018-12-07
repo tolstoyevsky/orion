@@ -1,0 +1,10 @@
+.idea
+*.pyc
+*.swo
+*.swp
+*tags
+build
+dist
+node_modules
+npm-debug.log
+static/bundles/*
