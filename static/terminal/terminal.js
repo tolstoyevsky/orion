@@ -1,6 +1,7 @@
 import { Display } from './primitives/display';
 import { Input } from './primitives/input';
 import { Screen } from './primitives/screen';
+import Shirow from 'shirow';
 
 export class Terminal {
     constructor($basis, row = 24, col = 80) {
@@ -20,14 +21,17 @@ export class Terminal {
         });
 
         const _input = new Input(this.screen.$node);
-        const _ws = new WebSocket('ws://' + location.host + '/termsocket');
+        const _client = new Shirow('ws://' + location.host + '/orion/token/mock_token');
 
-        _input.bind('oninput', function(data) {
-            _ws.send(data);
-        });
+        _client.on('ready', () => {
+            _client.emitForce('start').then(output => {
+                console.log(output)
+                this.display.$node.innerHTML = output;
+            })
 
-        _ws.onmessage = (e => {
-            this.display.$node.innerHTML = e.data;
+            _input.bind('oninput', data => {
+                _client.emitForce('enter', data)
+            });
         });
     }
 };

@@ -24,13 +24,12 @@ import termios
 import tornado.httpserver
 import tornado.options
 import tornado.web
-from tornado.ioloop import IOLoop
+from shirow.ioloop import IOLoop
+from shirow.server import RPCServer, TOKEN_PATTERN, remote
 from tornado.options import define, options
-from tornado.websocket import WebSocketHandler
 
 from gits.terminal import Terminal
 
-define('port', help='listen on a specific port', default=8888)
 define('static_path', help='the path to static resources',
        default=os.path.join(os.getcwd(), 'node_modules/gits-client/static'))
 define('templates_path', help='the path to templates',
@@ -42,14 +41,23 @@ class IndexHandler(tornado.web.RequestHandler):
         self.render('index.htm')
 
 
-class TermSocketHandler(WebSocketHandler):
+class TermSocketHandler(RPCServer):
     def __init__(self, application, request, **kwargs):
-        WebSocketHandler.__init__(self, application, request, **kwargs)
+        RPCServer.__init__(self, application, request, **kwargs)
 
         self._fd = self._pid = self._terminal = None
-        self._io_loop = IOLoop.current()
 
-    def _create(self, rows=24, cols=80):
+    def destroy(self):
+        self.logger.info('closed')
+        self.io_loop.remove_handler(self._fd)
+        try:
+            os.kill(self._pid, signal.SIGHUP)
+            os.close(self._fd)
+        except OSError:
+            pass
+
+    @remote
+    def start(self, request, rows=24, cols=80):
         pid, fd = pty.fork()
         if pid == 0:
             cmd = ['/bin/login']
@@ -62,6 +70,7 @@ class TermSocketHandler(WebSocketHandler):
             }
             os.execvpe(cmd[0], cmd, env)
         else:
+            self._fd = fd
             self._pid = pid
             self._terminal = Terminal(rows, cols)
 
@@ -69,43 +78,26 @@ class TermSocketHandler(WebSocketHandler):
             fcntl.ioctl(fd, termios.TIOCSWINSZ,
                         struct.pack('HHHH', rows, cols, 0, 0))
 
-            return fd
+            def callback(*args, **kwargs):
+                buf = os.read(self._fd, 65536)
+                html = self._terminal.generate_html(buf)
+                request.ret_and_continue(html)
 
-    def _destroy(self, fd):
-        try:
-            os.kill(self._pid, signal.SIGHUP)
-            os.close(fd)
-        except OSError:
-            pass
+            self.io_loop.add_handler(self._fd, callback, self.io_loop.READ)
 
-    # Implementing the methods inherited from
-    # tornado.websocket.WebSocketHandler
-
-    def open(self):
-        def callback(*args, **kwargs):
-            buf = os.read(self._fd, 65536)
-            html = self._terminal.generate_html(buf)
-            self.write_message(html)
-
-        self._fd = self._create()
-        self._io_loop.add_handler(self._fd, callback, self._io_loop.READ)
-
-    def on_message(self, data):
+    @remote
+    def enter(self, _request, data):
         try:
             os.write(self._fd, data.encode('utf8'))
         except (IOError, OSError):
-            self._destroy(self._fd)
-
-    def on_close(self):
-        self._io_loop.remove_handler(self._fd)
-        self._destroy(self._fd)
+            self.destroy()
 
 
 class Application(tornado.web.Application):
     def __init__(self):
         handlers = [
             (r'/', IndexHandler),
-            (r'/termsocket', TermSocketHandler),
+            (r'/orion/token/' + TOKEN_PATTERN, TermSocketHandler),
         ]
         settings = dict(
             template_path=options.templates_path,
@@ -121,9 +113,8 @@ def main():
 
     tornado.options.parse_command_line()
 
-    http_server = tornado.httpserver.HTTPServer(Application())
-    http_server.listen(options.port)
-    IOLoop.instance().start()
+    IOLoop().start(Application(), options.port)
+
 
 if __name__ == "__main__":
     main()
