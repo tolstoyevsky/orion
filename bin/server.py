@@ -79,7 +79,10 @@ class TermSocketHandler(RPCServer):
                         struct.pack('HHHH', rows, cols, 0, 0))
 
             def callback(*args, **kwargs):
-                buf = os.read(self._fd, 65536)
+                try:
+                    buf = os.read(self._fd, 65536)
+                except OSError:
+                    sys.exit(1)
                 html = self._terminal.generate_html(buf)
                 request.ret_and_continue(html)
 
