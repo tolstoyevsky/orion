@@ -21,7 +21,6 @@ import struct
 import sys
 import termios
 
-import tornado.httpserver
 import tornado.options
 import tornado.web
 from shirow.ioloop import IOLoop
@@ -29,16 +28,6 @@ from shirow.server import RPCServer, TOKEN_PATTERN, remote
 from tornado.options import define, options
 
 from gits.terminal import Terminal
-
-define('static_path', help='the path to static resources',
-       default=os.path.join(os.getcwd(), 'node_modules/gits-client/static'))
-define('templates_path', help='the path to templates',
-       default=os.path.join(os.getcwd(), 'node_modules/gits-client/templates'))
-
-
-class IndexHandler(tornado.web.RequestHandler):
-    def get(self):
-        self.render('index.htm')
 
 
 class TermSocketHandler(RPCServer):
@@ -96,14 +85,9 @@ class TermSocketHandler(RPCServer):
 class Application(tornado.web.Application):
     def __init__(self):
         handlers = [
-            (r'/', IndexHandler),
             (r'/orion/token/' + TOKEN_PATTERN, TermSocketHandler),
         ]
-        settings = dict(
-            template_path=options.templates_path,
-            static_path=options.static_path,
-        )
-        tornado.web.Application.__init__(self, handlers, **settings)
+        tornado.web.Application.__init__(self, handlers)
 
 
 def main():
