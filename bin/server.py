@@ -57,7 +57,7 @@ class TermSocketHandler(RPCServer):
             pass
 
     @remote
-    def start(self, request, rows=24, cols=80):
+    def start(self, request, image_name, rows=24, cols=80):
         pid, fd = pty.fork()
         if pid == 0:
             cmd = ['/bin/login']
