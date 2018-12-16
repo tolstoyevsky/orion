@@ -1,3 +1,6 @@
+docker
+psutil
 PyYAML
 pypandoc  # only for converting README.md
-shirow
+
+-e git+https://github.com/tolstoyevsky/shirow.git#egg=shirow

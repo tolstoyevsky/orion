@@ -16,40 +16,109 @@
 import fcntl
 import os
 import pty
+import shutil
 import signal
 import struct
 import sys
 import termios
 
+import docker
+import psutil
 import tornado.options
 import tornado.web
+from shirow import util
 from shirow.ioloop import IOLoop
 from shirow.server import RPCServer, TOKEN_PATTERN, remote
+from tornado import gen
 from tornado.options import define, options
 
 from gits.terminal import Terminal
+
+IMAGE_DOES_NOT_EXIST = 1
+IMAGE_IS_PREPARING = 2
+IMAGE_COULD_NOT_BE_PREPARED = 3
+IMAGE_TERMINATED = 4
+
+define('dominion_workspace',
+       default='/var/dominion/workspace/',
+       help='')
 
 
 class TermSocketHandler(RPCServer):
     def __init__(self, application, request, **kwargs):
         RPCServer.__init__(self, application, request, **kwargs)
 
-        self._fd = self._pid = self._terminal = None
+        self._client = docker.APIClient(base_url='unix://var/run/docker.sock')
+
+        self._image_internals_path = ''
+
+        self._container_name = None
+        self._fd = None
+        self._script_p = None
+        self._terminal = None
 
     def destroy(self):
-        self.logger.info('closed')
-        self.io_loop.remove_handler(self._fd)
-        try:
-            os.kill(self._pid, signal.SIGHUP)
-            os.close(self._fd)
-        except OSError:
-            pass
+        if self._container_name:
+            self._client.stop(self._container_name)
+
+        if self._fd:
+            self.io_loop.remove_handler(self._fd)
+            try:
+                self.logger.debug('Closing {}'.format(self._fd))
+                os.close(self._fd)
+            except OSError as e:
+                self.logger.error('An error occured when attempting to '
+                                  'close {}: {}'.format(self._fd, e))
+
+        if self._script_p and self._script_p.status() == 'running':
+            pid = self._script_p.pid
+            try:
+                self.logger.debug('Killing script process {}'.format(pid))
+                os.kill(pid, signal.SIGKILL)
+            except OSError as e:
+                self.logger.error('An error occured when attempting to '
+                                  'kill {}: {}'.format(pid, e))
+
+        if os.path.isdir(self._image_internals_path):
+            self.logger.debug('Removing image internals '
+                              '{}'.format(self._image_internals_path))
+            shutil.rmtree(self._image_internals_path)
 
     @remote
-    def start(self, request, rows=24, cols=80):
+    def start(self, request, image_name, rows=24, cols=80):
+        self._image_internals_path = '/tmp/{}'.format(image_name)
+
+        image_full_path = '{}/{}.img.gz'.format(options.dominion_workspace,
+                                                image_name)
+
+        if not os.path.isfile(image_full_path):
+            request.ret(IMAGE_DOES_NOT_EXIST)
+
+        request.ret_and_continue(IMAGE_IS_PREPARING)
+
+        self.logger.info('Uncompressing image {}'.format(image_name))
+
+        ret, _, err = yield util.execute_async(
+            ['uncompress_image.sh', image_name], {
+                'DOMINION_WORKSPACE': options.dominion_workspace,
+                'PATH': os.getenv('PATH'),
+            }
+        )
+
+        if ret:
+            self.logger.error('An error occurred when uncompressing the image '
+                              'named {}: {}'.format(err, image_name))
+            request.ret(IMAGE_COULD_NOT_BE_PREPARED)
+
         pid, fd = pty.fork()
-        if pid == 0:
-            cmd = ['/bin/login']
+        if pid == 0:  # child process
+            os.chdir(self._image_internals_path)
+
+            cmd = [
+                'docker-qemu.sh',
+                '-e IMAGE={}.img'.format(image_name),
+                '-n', image_name,
+            ]
 
             env = {
                 'COLUMNS': str(cols),
@@ -58,17 +127,37 @@ class TermSocketHandler(RPCServer):
                 'TERM': 'linux',
             }
             os.execvpe(cmd[0], cmd, env)
-        else:
+        else:  # parent process
+            self.logger.debug('docker-qemu.sh started with pid {}'.format(pid))
+
             self._fd = fd
-            self._pid = pid
+            self._script_p = psutil.Process(pid)
             self._terminal = Terminal(rows, cols)
+
+            attempts_number = 60
+            for i in range(attempts_number):
+                try:
+                    # Image name is also used as a container name
+                    self._client.inspect_container(image_name)
+                    break
+                except docker.errors.NotFound:
+                    yield gen.sleep(1)
+
+            self._container_name = image_name
 
             fcntl.fcntl(fd, fcntl.F_SETFL, os.O_NONBLOCK)
             fcntl.ioctl(fd, termios.TIOCSWINSZ,
                         struct.pack('HHHH', rows, cols, 0, 0))
 
             def callback(*args, **kwargs):
-                buf = os.read(self._fd, 65536)
+                # There can be the Input/output error if the process was
+                # terminated unexpectedly.
+                try:
+                    buf = os.read(self._fd, 65536)
+                except OSError:
+                    self.destroy()
+                    request.ret(IMAGE_TERMINATED)
+
                 html = self._terminal.generate_html(buf)
                 request.ret_and_continue(html)
 
