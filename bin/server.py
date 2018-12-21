@@ -111,6 +111,7 @@ def main():
         sys.stderr.write('{} must run as root\n'.format(sys.argv[0]))
         sys.exit(1)
 
+    options['log_file_prefix'] = 'orion.log'
     tornado.options.parse_command_line()
 
     IOLoop().start(Application(), options.port)
