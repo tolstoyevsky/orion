@@ -4,6 +4,8 @@ python:
   - 3.4
 
 install:
+  - sudo apt-get update -q
+  - sudo apt-get install pandoc -y
   - pip install -r requirements.txt
   - pip install pep8
 
