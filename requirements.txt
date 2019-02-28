@@ -1,6 +1,11 @@
+django==1.8.*
 docker
 psutil
+psycopg2
+pymongo==3.5.1
 PyYAML
 pypandoc  # only for converting README.md
 
+-e git+https://github.com/tolstoyevsky/django-cusdeb-firmwares.git#egg=django-cusdeb-firmwares
+-e git+ssh://git@bitbucket.org/cusdeb/django-cusdeb-users.git#egg=django-cusdeb-users
 -e git+https://github.com/tolstoyevsky/shirow.git#egg=shirow

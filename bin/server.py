@@ -22,25 +22,40 @@ import struct
 import sys
 import termios
 
+import django
 import docker
 import psutil
 import tornado.options
 import tornado.web
+from django.conf import settings
+from pymongo import MongoClient
 from shirow import util
 from shirow.ioloop import IOLoop
 from shirow.server import RPCServer, TOKEN_PATTERN, remote
 from tornado import gen
 from tornado.options import define, options
 
+from firmwares.models import Firmware
 from gits.terminal import Terminal
+from users.models import User
 
 IMAGE_DOES_NOT_EXIST = 1
 IMAGE_IS_PREPARING = 2
 IMAGE_COULD_NOT_BE_PREPARED = 3
 IMAGE_TERMINATED = 4
+IMAGE_IS_MISSING = 5
 
+define('db_name',
+       default=settings.MONGO['DATABASE'],
+       help='')
 define('dominion_workspace',
        default='/var/dominion/workspace/',
+       help='')
+define('mongodb_host',
+       default=settings.MONGO['HOST'],
+       help='')
+define('mongodb_port',
+       default=settings.MONGO['PORT'],
        help='')
 
 
@@ -86,6 +101,17 @@ class TermSocketHandler(RPCServer):
 
     @remote
     def start(self, request, image_name, rows=24, cols=80):
+        user = User.objects.get(id=self.user_id)
+        firmwares = Firmware.objects.filter(user=user) \
+                                    .filter(status=Firmware.DONE)
+        missing_status = True
+        for firmware in firmwares:
+            if firmware.name == image_name:
+                missing_status = False
+        
+        if missing_status:
+            request.ret(IMAGE_IS_MISSING)
+
         self._image_internals_path = '/tmp/{}'.format(image_name)
 
         image_full_path = '{}/{}.img.gz'.format(options.dominion_workspace,
@@ -183,6 +209,8 @@ def main():
     if os.getuid() != 0:
         sys.stderr.write('{} must run as root\n'.format(sys.argv[0]))
         sys.exit(1)
+
+    django.setup()
 
     tornado.options.parse_command_line()
 

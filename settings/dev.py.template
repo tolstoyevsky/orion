@@ -1,0 +1,27 @@
+from settings.defaults import *
+
+DEBUG = False
+
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql_psycopg2',
+        'NAME': '',
+        'USER': '',
+        'PASSWORD': '',
+        'HOST': '',
+        'PORT': '',
+    }
+}
+
+MONGO = {
+    'DATABASE': '',
+    'HOST': '',
+    'PORT': '',
+}
+
+EMAIL_HOST = 'smtp.yandex.ru'
+EMAIL_PORT = 465
+EMAIL_HOST_USER = 'noreply@cusdeb.com'
+DEFAULT_FROM_EMAIL = 'noreply@cusdeb.com'
+EMAIL_HOST_PASSWORD = ''
+EMAIL_USE_SSL = True
