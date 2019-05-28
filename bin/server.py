@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2013-2016 Evgeny Golyshev <eugulixes@gmail.com>
+# Copyright 2019 Denis Gavrilyuk <karpa4o4@gmail.com>
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may
 # not use this file except in compliance with the License. You may obtain
@@ -32,8 +33,6 @@ from shirow.server import RPCServer, TOKEN_PATTERN, remote
 from tornado import gen
 from tornado.options import define, options
 
-from gits.terminal import Terminal
-
 IMAGE_DOES_NOT_EXIST = 1
 IMAGE_IS_PREPARING = 2
 IMAGE_COULD_NOT_BE_PREPARED = 3
@@ -55,7 +54,6 @@ class TermSocketHandler(RPCServer):
         self._container_name = None
         self._fd = None
         self._script_p = None
-        self._terminal = None
 
     def destroy(self):
         if self._container_name:
@@ -132,7 +130,6 @@ class TermSocketHandler(RPCServer):
 
             self._fd = fd
             self._script_p = psutil.Process(pid)
-            self._terminal = Terminal(rows, cols)
 
             attempts_number = 60
             for i in range(attempts_number):
@@ -158,8 +155,7 @@ class TermSocketHandler(RPCServer):
                     self.destroy()
                     request.ret(IMAGE_TERMINATED)
 
-                html = self._terminal.generate_html(buf)
-                request.ret_and_continue(html)
+                request.ret_and_continue(buf.decode('utf8', errors='replace'))
 
             self.io_loop.add_handler(self._fd, callback, self.io_loop.READ)
 
