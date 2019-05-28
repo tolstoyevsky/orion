@@ -1,1 +1,1 @@
-Gits is written and maintained by Evgeny Golyshev, Maxim Karpinskiy and Dmitriy Shilin.
+Orion was implemented by [Evgeny Golyshev](https://github.com/eugulixes), [Denis Gavrilyuk](https://github.com/karpa4o4) and [Daniil Molotkov](https://github.com/mdanil007) on the hackathon [47 hours #11](https://vk.com/47hours11).
