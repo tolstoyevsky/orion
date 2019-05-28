@@ -8,7 +8,7 @@ The microservice was named after the manga named [Orion](https://en.wikipedia.or
 
 ## Authors
 
-See [AUTHORS](https://github.com/tolstoyevsky/gits/blob/master/AUTHORS.md).
+See [AUTHORS](https://github.com/tolstoyevsky/orion/blob/master/AUTHORS.md).
 
 ## Licensing
 
