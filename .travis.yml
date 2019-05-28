@@ -10,5 +10,4 @@ install:
   - pip install pep8
 
 script:
-  - env PYTHONPATH=`pwd` python3 gits/test/capabilities_test.py
-  - pep8 bin/server.py gits/terminal.py gits/test/*
+  - pep8 bin/server.py

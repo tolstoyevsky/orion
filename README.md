@@ -2,7 +2,7 @@
 
 # Orion
 
-Orion is a [CusDeb](https://cusdeb.com) microservice which is intended to provide for the possibility of testing operating systems images in a web browser. The project is based on [Gits](https://github.com/tolstoyevsky/gits) which is, in turn, based on [Ajaxterm](https://github.com/antonylesuisse/qweb/tree/master/ajaxterm).
+Orion is a [CusDeb](https://cusdeb.com) microservice which is intended to provide for the possibility of testing operating systems images in a web browser.
 
 The microservice was named after the manga named [Orion](https://en.wikipedia.org/wiki/Orion_(manga)) by [Masamune Shirow](https://en.wikipedia.org/wiki/Masamune_Shirow).
 
