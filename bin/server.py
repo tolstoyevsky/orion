@@ -122,7 +122,7 @@ class TermSocketHandler(RPCServer):
                 'COLUMNS': str(cols),
                 'LINES': str(rows),
                 'PATH': os.environ['PATH'],
-                'TERM': 'linux',
+                'TERM': 'vt220',
             }
             os.execvpe(cmd[0], cmd, env)
         else:  # parent process
