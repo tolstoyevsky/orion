@@ -57,7 +57,16 @@ class TermSocketHandler(RPCServer):
 
     def destroy(self):
         if self._container_name:
-            self._client.stop(self._container_name)
+            try:
+                self._client.stop(self._container_name)
+                self.logger.info('The container {} was '
+                                 'stopped'.format(self._container_name))
+            except docker.errors.NotFound:
+                # When the user presses Ctrl-c, QEMU and its container exit.
+                # Since the container runs with the --rm option, after stopping
+                # it's removed.
+                self.logger.info('The container {} '
+                                 'does not exist'.format(self._container_name))
 
         if self._fd:
             self.io_loop.remove_handler(self._fd)
