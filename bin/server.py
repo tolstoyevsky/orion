@@ -22,6 +22,7 @@ import signal
 import struct
 import sys
 import termios
+from collections import deque
 
 import docker
 import psutil
@@ -54,6 +55,8 @@ class TermSocketHandler(RPCServer):
         self._container_name = None
         self._fd = None
         self._script_p = None
+
+        self._kernel_panic_deque = deque(maxlen=4)
 
     def destroy(self):
         if self._container_name:
@@ -159,12 +162,22 @@ class TermSocketHandler(RPCServer):
                 # There can be the Input/output error if the process was
                 # terminated unexpectedly.
                 try:
-                    buf = os.read(self._fd, 65536)
+                    buf = os.read(self._fd, 65536).decode('utf8',
+                                                          errors='replace')
+                    self._kernel_panic_deque.append(buf)
+
+                    kernel_panic_str = 'end Kernel panic - not syncing: VFS:' \
+                                       ' Unable to mount root fs on ' \
+                                       'unknown-block(0,0)'
+                    if ''.join(list(self._kernel_panic_deque)).strip() \
+                            .endswith(kernel_panic_str):
+                        self.logger.debug('---- Kernel panic')
+                        self.destroy()
                 except OSError:
                     self.destroy()
                     request.ret(IMAGE_TERMINATED)
 
-                request.ret_and_continue(buf.decode('utf8', errors='replace'))
+                request.ret_and_continue(buf)
 
             self.io_loop.add_handler(self._fd, callback, self.io_loop.READ)
 
