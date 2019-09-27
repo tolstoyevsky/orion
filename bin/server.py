@@ -58,7 +58,46 @@ class TermSocketHandler(RPCServer):
 
         self._kernel_panic_deque = deque(maxlen=4)
 
-    def destroy(self):
+    @gen.coroutine
+    def _run_terminal(self, image_name, cols, rows):
+        pid, fd = pty.fork()
+        if pid == 0:  # child process
+            os.chdir(self._image_internals_path)
+
+            cmd = [
+                'docker-qemu.sh',
+                '-e IMAGE={}.img'.format(image_name),
+                '-n', image_name,
+            ]
+
+            env = {
+                'COLUMNS': str(cols),
+                'LINES': str(rows),
+                'PATH': os.environ['PATH'],
+                'TERM': 'vt220',
+            }
+            os.execvpe(cmd[0], cmd, env)
+        else:  # parent process
+            self.logger.debug('docker-qemu.sh started with pid {}'.format(pid))
+
+            self._fd = fd
+            self._script_p = psutil.Process(pid)
+            attempts_number = 60
+            for i in range(attempts_number):
+                try:
+                    # Image name is also used as a container name
+                    self._client.inspect_container(image_name)
+                    break
+                except docker.errors.NotFound:
+                    yield gen.sleep(1)
+
+            self._container_name = image_name
+
+            fcntl.fcntl(fd, fcntl.F_SETFL, os.O_NONBLOCK)
+            fcntl.ioctl(fd, termios.TIOCSWINSZ,
+                        struct.pack('HHHH', rows, cols, 0, 0))
+
+    def destroy(self, rerun=False):
         if self._container_name:
             try:
                 self._client.stop(self._container_name)
@@ -89,10 +128,11 @@ class TermSocketHandler(RPCServer):
                 self.logger.error('An error occured when attempting to '
                                   'kill {}: {}'.format(pid, e))
 
-        if os.path.isdir(self._image_internals_path):
-            self.logger.debug('Removing image internals '
-                              '{}'.format(self._image_internals_path))
-            shutil.rmtree(self._image_internals_path)
+        if rerun:
+            if os.path.isdir(self._image_internals_path):
+                self.logger.debug('Removing image internals '
+                                  '{}'.format(self._image_internals_path))
+                shutil.rmtree(self._image_internals_path)
 
     @remote
     def start(self, request, image_name, rows=24, cols=80):
@@ -120,66 +160,31 @@ class TermSocketHandler(RPCServer):
                               'named {}: {}'.format(err, image_name))
             request.ret(IMAGE_COULD_NOT_BE_PREPARED)
 
-        pid, fd = pty.fork()
-        if pid == 0:  # child process
-            os.chdir(self._image_internals_path)
+        self.io_loop.current().run_sync(
+            lambda: self._run_terminal(image_name, cols, rows))
 
-            cmd = [
-                'docker-qemu.sh',
-                '-e IMAGE={}.img'.format(image_name),
-                '-n', image_name,
-            ]
+        def callback(*args, **kwargs):
+            # There can be the Input/output error if the process was
+            # terminated unexpectedly.
+            try:
+                buf = os.read(self._fd, 65536).decode('utf8',
+                                                      errors='replace')
+                self._kernel_panic_deque.append(buf)
 
-            env = {
-                'COLUMNS': str(cols),
-                'LINES': str(rows),
-                'PATH': os.environ['PATH'],
-                'TERM': 'vt220',
-            }
-            os.execvpe(cmd[0], cmd, env)
-        else:  # parent process
-            self.logger.debug('docker-qemu.sh started with pid {}'.format(pid))
+                kernel_panic_str = 'end Kernel panic - not syncing: VFS:' \
+                                   ' Unable to mount root fs on ' \
+                                   'unknown-block(0,0)'
+                if ''.join(list(self._kernel_panic_deque)).strip() \
+                        .endswith(kernel_panic_str):
+                    self.logger.debug('---- Kernel panic')
+                    self.destroy(rerun=True)
+            except OSError:
+                self.destroy()
+                request.ret(IMAGE_TERMINATED)
 
-            self._fd = fd
-            self._script_p = psutil.Process(pid)
+            request.ret_and_continue(buf)
 
-            attempts_number = 60
-            for i in range(attempts_number):
-                try:
-                    # Image name is also used as a container name
-                    self._client.inspect_container(image_name)
-                    break
-                except docker.errors.NotFound:
-                    yield gen.sleep(1)
-
-            self._container_name = image_name
-
-            fcntl.fcntl(fd, fcntl.F_SETFL, os.O_NONBLOCK)
-            fcntl.ioctl(fd, termios.TIOCSWINSZ,
-                        struct.pack('HHHH', rows, cols, 0, 0))
-
-            def callback(*args, **kwargs):
-                # There can be the Input/output error if the process was
-                # terminated unexpectedly.
-                try:
-                    buf = os.read(self._fd, 65536).decode('utf8',
-                                                          errors='replace')
-                    self._kernel_panic_deque.append(buf)
-
-                    kernel_panic_str = 'end Kernel panic - not syncing: VFS:' \
-                                       ' Unable to mount root fs on ' \
-                                       'unknown-block(0,0)'
-                    if ''.join(list(self._kernel_panic_deque)).strip() \
-                            .endswith(kernel_panic_str):
-                        self.logger.debug('---- Kernel panic')
-                        self.destroy()
-                except OSError:
-                    self.destroy()
-                    request.ret(IMAGE_TERMINATED)
-
-                request.ret_and_continue(buf)
-
-            self.io_loop.add_handler(self._fd, callback, self.io_loop.READ)
+        self.io_loop.add_handler(self._fd, callback, self.io_loop.READ)
 
     @remote
     def enter(self, _request, data):
