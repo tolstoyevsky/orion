@@ -23,7 +23,9 @@ from shirow.ioloop import IOLoop
 from shirow.server import RPCServer, TOKEN_PATTERN, remote
 
 
-class TermSocketHandler(RPCServer):
+class Orion(RPCServer):
+    """The handler which allows to emulate a device and run an OS on it using QEMU. """
+
     def __init__(self, application, request, **kwargs):
         RPCServer.__init__(self, application, request, **kwargs)
 
@@ -40,7 +42,7 @@ class Application(tornado.web.Application):
 
     def __init__(self):
         handlers = [
-            (r'/orion/token/' + TOKEN_PATTERN, TermSocketHandler),
+            (r'/orion/token/' + TOKEN_PATTERN, Orion),
         ]
         tornado.web.Application.__init__(self, handlers)
 
