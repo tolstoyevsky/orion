@@ -27,7 +27,7 @@ class Orion(RPCServer):  # pylint: disable=abstract-method
     """The handler which allows to emulate a device and run an OS on it using QEMU. """
 
     def __init__(self, application, request, **kwargs):
-        RPCServer.__init__(self, application, request, **kwargs)
+        super().__init__(application, request, **kwargs)
 
     def destroy(self):
         pass
@@ -44,7 +44,7 @@ class Application(tornado.web.Application):
         handlers = [
             (r'/orion/token/' + TOKEN_PATTERN, Orion),
         ]
-        tornado.web.Application.__init__(self, handlers)
+        super().__init__(handlers)
 
 
 def main():
