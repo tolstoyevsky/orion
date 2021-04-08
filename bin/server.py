@@ -24,6 +24,13 @@ from tornado.options import options
 from shirow.ioloop import IOLoop
 from shirow.server import RPCServer, TOKEN_PATTERN, remote
 
+from orion.codes import (
+    IMAGE_STARTING_UNAVAILABLE,
+)
+from orion.exceptions import (
+    ImageStartingUnavailable,
+)
+
 
 class Orion(RPCServer):  # pylint: disable=abstract-method
     """The handler which allows to emulate a device and run an OS on it using QEMU. """
@@ -31,12 +38,23 @@ class Orion(RPCServer):  # pylint: disable=abstract-method
     def __init__(self, application, request, **kwargs):
         super().__init__(application, request, **kwargs)
 
+    def _can_start(self):
+        from users.models import Person  # pylint: disable=import-outside-toplevel,import-error
+
+        try:
+            Person.objects.get(user__pk=self.user_id)
+        except Person.DoesNotExist as exc:
+            raise ImageStartingUnavailable from exc
+
     def destroy(self):
         pass
 
     @remote
-    def start(self, request):
-        pass
+    async def start(self, request, image_id):
+        try:
+            self._can_start()
+        except ImageStartingUnavailable:
+            request.ret_error(IMAGE_STARTING_UNAVAILABLE)
 
 
 class Application(tornado.web.Application):
