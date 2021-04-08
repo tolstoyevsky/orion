@@ -18,17 +18,26 @@
 
 import os
 import sys
+from urllib.parse import urljoin
 
 import tornado.web
 from tornado.options import options
 from shirow.ioloop import IOLoop
 from shirow.server import RPCServer, TOKEN_PATTERN, remote
 
+from orion.settings import (
+    CONTAINER_NAME,
+    IMAGE_BASE_URL,
+    IMAGE_FILENAME,
+)
 from orion.codes import (
+    CONTAINER_ALREADY_EXIST,
     IMAGE_DOES_NOT_EXIST,
     IMAGE_STARTING_UNAVAILABLE,
 )
+from orion.engine import QEMUDocker
 from orion.exceptions import (
+    ContainerAlreadyExists,
     ImageDoesNotExist,
     ImageStartingUnavailable,
 )
@@ -39,6 +48,8 @@ class Orion(RPCServer):  # pylint: disable=abstract-method
 
     def __init__(self, application, request, **kwargs):
         super().__init__(application, request, **kwargs)
+
+        self._qemu = None
 
     def _can_start(self):
         from users.models import Person  # pylint: disable=import-outside-toplevel,import-error
@@ -71,6 +82,20 @@ class Orion(RPCServer):  # pylint: disable=abstract-method
             self._image_exist(image_id)
         except ImageDoesNotExist:
             request.ret_error(IMAGE_DOES_NOT_EXIST)
+
+        container_name = CONTAINER_NAME.format(image_id=image_id)
+        self._qemu = QEMUDocker(container_name)
+
+        image_filename = IMAGE_FILENAME.format(image_id=image_id)
+        image_url = urljoin(IMAGE_BASE_URL, image_filename)
+
+        env = {
+            'IMAGE_URL': image_url,
+        }
+        try:
+            self._qemu.run(env)
+        except ContainerAlreadyExists:
+            request.ret_error(CONTAINER_ALREADY_EXIST)
 
 
 class Application(tornado.web.Application):

@@ -15,6 +15,10 @@
 """Module containing exceptions for the Orion. """
 
 
+class ContainerAlreadyExists(Exception):
+    """Raised if the QEMU container already exist. """
+
+
 class ImageDoesNotExist(Exception):
     """Raised if the image with passed image_id doesn't exist. """
 

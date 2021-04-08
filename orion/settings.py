@@ -41,3 +41,11 @@ INSTALLED_APPS = [
     'images',
     'users',
 ]
+
+QEMU_IMAGE = 'cusdeb/qemu:6.0-amd64'
+
+CONTAINER_NAME = 'qemu-{image_id}'
+
+IMAGE_BASE_URL = os.getenv('IMAGE_BASE_URL', 'http://127.0.0.1:8008')
+
+IMAGE_FILENAME = '{image_id}.img.gz'
