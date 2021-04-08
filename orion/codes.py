@@ -15,3 +15,5 @@
 """Module containing status codes for the Orion. """
 
 IMAGE_STARTING_UNAVAILABLE = 10
+
+IMAGE_DOES_NOT_EXIST = 11

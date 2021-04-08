@@ -15,5 +15,9 @@
 """Module containing exceptions for the Orion. """
 
 
+class ImageDoesNotExist(Exception):
+    """Raised if the image with passed image_id doesn't exist. """
+
+
 class ImageStartingUnavailable(Exception):
     """Raised if the user can't rights for starting OS image. """

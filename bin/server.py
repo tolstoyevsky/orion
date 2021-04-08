@@ -25,9 +25,11 @@ from shirow.ioloop import IOLoop
 from shirow.server import RPCServer, TOKEN_PATTERN, remote
 
 from orion.codes import (
+    IMAGE_DOES_NOT_EXIST,
     IMAGE_STARTING_UNAVAILABLE,
 )
 from orion.exceptions import (
+    ImageDoesNotExist,
     ImageStartingUnavailable,
 )
 
@@ -46,6 +48,15 @@ class Orion(RPCServer):  # pylint: disable=abstract-method
         except Person.DoesNotExist as exc:
             raise ImageStartingUnavailable from exc
 
+    @staticmethod
+    def _image_exist(image_id):
+        from images.models import Image  # pylint: disable=import-outside-toplevel,import-error
+
+        try:
+            Image.objects.get(image_id=image_id)
+        except Image.DoesNotExist as exc:
+            raise ImageDoesNotExist from exc
+
     def destroy(self):
         pass
 
@@ -55,6 +66,11 @@ class Orion(RPCServer):  # pylint: disable=abstract-method
             self._can_start()
         except ImageStartingUnavailable:
             request.ret_error(IMAGE_STARTING_UNAVAILABLE)
+
+        try:
+            self._image_exist(image_id)
+        except ImageDoesNotExist:
+            request.ret_error(IMAGE_DOES_NOT_EXIST)
 
 
 class Application(tornado.web.Application):
