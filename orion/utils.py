@@ -18,8 +18,17 @@ import asyncio
 import random
 import socket
 import string
+from contextlib import closing
 
 from orion.exceptions import ConnectionTimeout
+
+
+def allocate_port():
+    """Allocates a free port. """
+
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
+        sock.bind(('', 0))
+        return sock.getsockname()[1]
 
 
 def get_random_string(length):

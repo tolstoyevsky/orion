@@ -20,7 +20,7 @@ from docker.errors import APIError, NotFound
 from orion import settings
 from orion.exceptions import ContainerAlreadyExists
 from orion.socket import closing_socket
-from orion.utils import get_random_string
+from orion.utils import allocate_port, get_random_string
 
 _DOCKER_CLIENT = docker.from_env()
 
@@ -34,7 +34,7 @@ class QEMUDocker:
         self._container_name = container_name
         self._container = None
 
-        self.monitor_port = 55555
+        self.monitor_port = allocate_port()
         self.vnc_password = get_random_string(8)
 
         self._run_kwargs = {
