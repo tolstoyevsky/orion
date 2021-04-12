@@ -31,15 +31,19 @@ from orion.settings import (
     IMAGE_FILENAME,
 )
 from orion.codes import (
+    CHANGE_VNC_PASSWORD_FAILED,
     CONTAINER_ALREADY_EXIST,
     IMAGE_DOES_NOT_EXIST,
     IMAGE_STARTING_UNAVAILABLE,
 )
 from orion.engine import QEMUDocker
 from orion.exceptions import (
+    ConnectionTimeout,
     ContainerAlreadyExists,
+    ContainerDoesNotExists,
     ImageDoesNotExist,
     ImageStartingUnavailable,
+    SocketWaitStrTimeout,
 )
 
 
@@ -58,6 +62,13 @@ class Orion(RPCServer):  # pylint: disable=abstract-method
             Person.objects.get(user__pk=self.user_id)
         except Person.DoesNotExist as exc:
             raise ImageStartingUnavailable from exc
+
+    async def _change_vnc_password(self, request):
+        try:
+            await self._qemu.set_random_vnc_password()
+        except (ConnectionTimeout, ContainerDoesNotExists, SocketWaitStrTimeout, ):
+            self._destroy()
+            request.ret_error(CHANGE_VNC_PASSWORD_FAILED)
 
     def _destroy(self):
         self._qemu.kill()
@@ -94,11 +105,15 @@ class Orion(RPCServer):  # pylint: disable=abstract-method
 
         env = {
             'IMAGE_URL': image_url,
+            'ENABLE_VNC_PASSWORD': 'true',
+            'MONITOR_PORT': self._qemu.monitor_port,
         }
         try:
             self._qemu.run(env)
         except ContainerAlreadyExists:
             request.ret_error(CONTAINER_ALREADY_EXIST)
+
+        self.io_loop.add_callback(lambda: self._change_vnc_password(request))
 
 
 class Application(tornado.web.Application):

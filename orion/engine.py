@@ -15,10 +15,12 @@
 """Module containing engines for running QEMU on different platforms. """
 
 import docker
-from docker.errors import APIError
+from docker.errors import APIError, NotFound
 
 from orion import settings
 from orion.exceptions import ContainerAlreadyExists
+from orion.socket import closing_socket
+from orion.utils import get_random_string
 
 _DOCKER_CLIENT = docker.from_env()
 
@@ -32,6 +34,9 @@ class QEMUDocker:
         self._container_name = container_name
         self._container = None
 
+        self.monitor_port = 55555
+        self.vnc_password = get_random_string(8)
+
         self._run_kwargs = {
             'detach': True,
             'remove': True,
@@ -44,6 +49,19 @@ class QEMUDocker:
             'environment': {},
         }
 
+    def kill(self):
+        """Kills the QEMU container. The method does not raise any exception if the container
+        either does not exist or is not running.
+        """
+
+        try:
+            self._container.kill()
+        except (APIError, NotFound, ):
+            # Probably the container is not running. Simply ignore it.
+            return None
+
+        return None
+
     def run(self, env):
         """Runs the QEMU container, optionally passing environment variables to it via ``env``. """
 
@@ -54,3 +72,10 @@ class QEMUDocker:
             self._container = DOCKER.run(settings.QEMU_IMAGE, **self._run_kwargs)
         except APIError as exc:
             raise ContainerAlreadyExists from exc
+
+    async def set_random_vnc_password(self):
+        """Sets a random access password for the VNC session running in the QEMU container. """
+
+        command = 'change vnc password'
+        async with closing_socket(self.monitor_port, wait_str=command) as socket:
+            socket.send(f'{command} {self.vnc_password}\n{self.vnc_password}\n')

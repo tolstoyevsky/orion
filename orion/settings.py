@@ -49,3 +49,5 @@ CONTAINER_NAME = 'qemu-{image_id}'
 IMAGE_BASE_URL = os.getenv('IMAGE_BASE_URL', 'http://127.0.0.1:8008')
 
 IMAGE_FILENAME = '{image_id}.img.gz'
+
+TCP_CONNECTION_TIMEOUT = 180

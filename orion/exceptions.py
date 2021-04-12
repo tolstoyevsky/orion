@@ -15,8 +15,16 @@
 """Module containing exceptions for the Orion. """
 
 
+class ConnectionTimeout(Exception):
+    """Raised if time to connect to a remote socket has time out. """
+
+
 class ContainerAlreadyExists(Exception):
     """Raised if the QEMU container already exist. """
+
+
+class ContainerDoesNotExists(Exception):
+    """Raised if the required QEMU container does not exist. """
 
 
 class ImageDoesNotExist(Exception):
@@ -25,3 +33,7 @@ class ImageDoesNotExist(Exception):
 
 class ImageStartingUnavailable(Exception):
     """Raised if the user can't rights for starting OS image. """
+
+
+class SocketWaitStrTimeout(Exception):
+    """Raised if waiting time of specified string in output has time out. """
