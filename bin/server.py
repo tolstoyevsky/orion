@@ -106,6 +106,7 @@ class Orion(RPCServer):  # pylint: disable=abstract-method
         env = {
             'IMAGE_URL': image_url,
             'ENABLE_VNC_PASSWORD': 'true',
+            'VNC_DISPLAY': self._qemu.vnc_display,
             'MONITOR_PORT': self._qemu.monitor_port,
             'SERIAL_PORT': self._qemu.serial_port,
         }

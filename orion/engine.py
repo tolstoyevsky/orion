@@ -20,9 +20,11 @@ from docker.errors import APIError, NotFound
 from orion import settings
 from orion.exceptions import ContainerAlreadyExists
 from orion.socket import closing_socket
-from orion.utils import allocate_port, get_random_string
+from orion.utils import allocate_port, allocate_port_from_range, get_random_string
 
 _DOCKER_CLIENT = docker.from_env()
+
+_VNC_MIN_PORT = 5900
 
 DOCKER = _DOCKER_CLIENT.containers
 
@@ -34,6 +36,8 @@ class QEMUDocker:
         self._container_name = container_name
         self._container = None
 
+        self.vnc_port = allocate_port_from_range(min_port=_VNC_MIN_PORT)
+        self.vnc_display = self.vnc_port - _VNC_MIN_PORT
         self.monitor_port = allocate_port()
         self.serial_port = allocate_port()
         self.vnc_password = get_random_string(8)

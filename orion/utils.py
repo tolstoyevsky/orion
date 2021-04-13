@@ -22,6 +22,8 @@ from contextlib import closing
 
 from orion.exceptions import ConnectionTimeout
 
+_MAX_TCP_PORT = 65535
+
 
 def allocate_port():
     """Allocates a free port. """
@@ -30,6 +32,24 @@ def allocate_port():
         sock.bind(('', 0))
         return sock.getsockname()[1]
 
+
+def allocate_port_from_range(min_port=0, max_port=_MAX_TCP_PORT):
+    """Allocates a free port from the specified port range. """
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+    ports = list(range(min_port, max_port))
+    random.shuffle(ports)
+
+    for port in ports:
+        try:
+            sock.bind(('', port))
+            sock.close()
+            return port
+        except OSError:
+            continue
+
+    return None
 
 def get_random_string(length):
     """Generates a random string with the length specified in the ``length``. """
