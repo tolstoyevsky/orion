@@ -59,6 +59,9 @@ class Orion(RPCServer):  # pylint: disable=abstract-method
         except Person.DoesNotExist as exc:
             raise ImageStartingUnavailable from exc
 
+    def _destroy(self):
+        self._qemu.kill()
+
     @staticmethod
     def _image_exist(image_id):
         from images.models import Image  # pylint: disable=import-outside-toplevel,import-error
@@ -69,7 +72,7 @@ class Orion(RPCServer):  # pylint: disable=abstract-method
             raise ImageDoesNotExist from exc
 
     def destroy(self):
-        pass
+        self._destroy()
 
     @remote
     async def start(self, request, image_id):
