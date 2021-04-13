@@ -35,6 +35,7 @@ class QEMUDocker:
         self._container = None
 
         self.monitor_port = allocate_port()
+        self.serial_port = allocate_port()
         self.vnc_password = get_random_string(8)
 
         self._run_kwargs = {
