@@ -137,6 +137,11 @@ class Orion(RPCServer):  # pylint: disable=abstract-method
         self._ws_proxy = WebSocketProxy(self._qemu.vnc_port)
         self.io_loop.add_callback(lambda: self._run_websocket_proxy(request))
 
+        request.ret_and_continue({
+            'ws_proxy_port': self._ws_proxy.port,
+            'vnc_password': self._qemu.vnc_password,
+        })
+
 
 class Application(tornado.web.Application):
     """The class of tornado application. """
