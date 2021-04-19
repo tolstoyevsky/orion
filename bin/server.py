@@ -29,12 +29,15 @@ from orion.settings import (
     CONTAINER_NAME,
     IMAGE_BASE_URL,
     IMAGE_FILENAME,
+    TCP_CONNECTION_TIMEOUT,
 )
 from orion.codes import (
     CHANGE_VNC_PASSWORD_FAILED,
     CONTAINER_ALREADY_EXIST,
     IMAGE_DOES_NOT_EXIST,
     IMAGE_STARTING_UNAVAILABLE,
+    VNC_SERVER_CONNECTION_FAILED,
+    WEB_SOCKET_PROXY_READY,
 )
 from orion.engine import QEMUDocker
 from orion.exceptions import (
@@ -45,6 +48,8 @@ from orion.exceptions import (
     ImageStartingUnavailable,
     SocketWaitStrTimeout,
 )
+from orion.utils import wait_for_it
+from orion.ws_proxy import WebSocketProxy
 
 
 class Orion(RPCServer):  # pylint: disable=abstract-method
@@ -54,6 +59,7 @@ class Orion(RPCServer):  # pylint: disable=abstract-method
         super().__init__(application, request, **kwargs)
 
         self._qemu = None
+        self._ws_proxy = None
 
     def _can_start(self):
         from users.models import Person  # pylint: disable=import-outside-toplevel,import-error
@@ -71,6 +77,7 @@ class Orion(RPCServer):  # pylint: disable=abstract-method
             request.ret_error(CHANGE_VNC_PASSWORD_FAILED)
 
     def _destroy(self):
+        self._ws_proxy.kill()
         self._qemu.kill()
 
     @staticmethod
@@ -81,6 +88,16 @@ class Orion(RPCServer):  # pylint: disable=abstract-method
             Image.objects.get(image_id=image_id)
         except Image.DoesNotExist as exc:
             raise ImageDoesNotExist from exc
+
+    async def _run_websocket_proxy(self, request):
+        try:
+            await wait_for_it(self._qemu.vnc_port, TCP_CONNECTION_TIMEOUT)
+        except ConnectionTimeout:
+            self._destroy()
+            request.ret_error(VNC_SERVER_CONNECTION_FAILED)
+
+        self._ws_proxy.run()
+        request.ret_and_continue(WEB_SOCKET_PROXY_READY)
 
     def destroy(self):
         self._destroy()
@@ -116,6 +133,9 @@ class Orion(RPCServer):  # pylint: disable=abstract-method
             request.ret_error(CONTAINER_ALREADY_EXIST)
 
         self.io_loop.add_callback(lambda: self._change_vnc_password(request))
+
+        self._ws_proxy = WebSocketProxy(self._qemu.vnc_port)
+        self.io_loop.add_callback(lambda: self._run_websocket_proxy(request))
 
 
 class Application(tornado.web.Application):
