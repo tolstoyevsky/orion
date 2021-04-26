@@ -23,7 +23,7 @@ from shirow.ioloop import IOLoop
 from shirow.server import RPCServer, TOKEN_PATTERN, remote
 
 
-class Orion(RPCServer):
+class Orion(RPCServer):  # pylint: disable=abstract-method
     """The handler which allows to emulate a device and run an OS on it using QEMU. """
 
     def __init__(self, application, request, **kwargs):
