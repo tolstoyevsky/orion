@@ -104,6 +104,8 @@ class Orion(RPCServer):  # pylint: disable=abstract-method
 
     @remote
     async def start(self, request, image_id):
+        """"""
+
         try:
             self._can_start()
         except ImageStartingUnavailable:
