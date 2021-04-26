@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright 2013-2016 Evgeny Golyshev <eugulixes@gmail.com>
-# Copyright 2019 Denis Gavrilyuk <karpa4o4@gmail.com>
+# Copyright 2019-2021 Denis Gavrilyuk <karpa4o4@gmail.com>
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may
 # not use this file except in compliance with the License. You may obtain
@@ -14,182 +14,155 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-import fcntl
-import os
-import pty
-import shutil
-import signal
-import struct
-import sys
-import termios
+"""Module containing the Orion RPC server. """
 
-import docker
-import psutil
-import tornado.options
+import os
+import sys
+from urllib.parse import urljoin
+
 import tornado.web
-from shirow import util
+from tornado.options import options
 from shirow.ioloop import IOLoop
 from shirow.server import RPCServer, TOKEN_PATTERN, remote
-from tornado import gen
-from tornado.options import define, options
 
-IMAGE_DOES_NOT_EXIST = 1
-IMAGE_IS_PREPARING = 2
-IMAGE_COULD_NOT_BE_PREPARED = 3
-IMAGE_TERMINATED = 4
+from orion.settings import (
+    CONTAINER_NAME,
+    IMAGE_BASE_URL,
+    IMAGE_FILENAME,
+    TCP_CONNECTION_TIMEOUT,
+)
+from orion.codes import (
+    CHANGE_VNC_PASSWORD_FAILED,
+    CONTAINER_ALREADY_EXIST,
+    IMAGE_DOES_NOT_EXIST,
+    IMAGE_STARTING_UNAVAILABLE,
+    VNC_SERVER_CONNECTION_FAILED,
+    WEB_SOCKET_PROXY_READY,
+)
+from orion.engine import QEMUDocker
+from orion.exceptions import (
+    ConnectionTimeout,
+    ContainerAlreadyExists,
+    ContainerDoesNotExists,
+    ImageDoesNotExist,
+    ImageStartingUnavailable,
+    SocketWaitStrTimeout,
+)
+from orion.utils import wait_for_it
+from orion.ws_proxy import WebSocketProxy
 
-define('dominion_workspace',
-       default='/var/dominion/workspace/',
-       help='')
 
+class Orion(RPCServer):  # pylint: disable=abstract-method
+    """The handler which allows to emulate a device and run an OS on it using QEMU. """
 
-class TermSocketHandler(RPCServer):
     def __init__(self, application, request, **kwargs):
-        RPCServer.__init__(self, application, request, **kwargs)
+        super().__init__(application, request, **kwargs)
 
-        self._client = docker.APIClient(base_url='unix://var/run/docker.sock')
+        self._qemu = None
+        self._ws_proxy = None
 
-        self._image_internals_path = ''
+    def _can_start(self):
+        from users.models import Person  # pylint: disable=import-outside-toplevel,import-error
 
-        self._container_name = None
-        self._fd = None
-        self._script_p = None
+        try:
+            Person.objects.get(user__pk=self.user_id)
+        except Person.DoesNotExist as exc:
+            raise ImageStartingUnavailable from exc
+
+    async def _change_vnc_password(self, request):
+        try:
+            await self._qemu.set_random_vnc_password()
+        except (ConnectionTimeout, ContainerDoesNotExists, SocketWaitStrTimeout, ):
+            self._destroy()
+            request.ret_error(CHANGE_VNC_PASSWORD_FAILED)
+
+    def _destroy(self):
+        self._ws_proxy.kill()
+        self._qemu.kill()
+
+    @staticmethod
+    def _image_exist(image_id):
+        from images.models import Image  # pylint: disable=import-outside-toplevel,import-error
+
+        try:
+            Image.objects.get(image_id=image_id)
+        except Image.DoesNotExist as exc:
+            raise ImageDoesNotExist from exc
+
+    async def _run_websocket_proxy(self, request):
+        try:
+            await wait_for_it(self._qemu.vnc_port, TCP_CONNECTION_TIMEOUT)
+        except ConnectionTimeout:
+            self._destroy()
+            request.ret_error(VNC_SERVER_CONNECTION_FAILED)
+
+        self._ws_proxy.run()
+        request.ret_and_continue(WEB_SOCKET_PROXY_READY)
 
     def destroy(self):
-        if self._container_name:
-            try:
-                self._client.stop(self._container_name)
-                self.logger.info('The container {} was '
-                                 'stopped'.format(self._container_name))
-            except docker.errors.NotFound:
-                # When the user presses Ctrl-c, QEMU and its container exit.
-                # Since the container runs with the --rm option, after stopping
-                # it's removed.
-                self.logger.info('The container {} '
-                                 'does not exist'.format(self._container_name))
-
-        if self._fd:
-            self.io_loop.remove_handler(self._fd)
-            try:
-                self.logger.debug('Closing {}'.format(self._fd))
-                os.close(self._fd)
-            except OSError as e:
-                self.logger.error('An error occured when attempting to '
-                                  'close {}: {}'.format(self._fd, e))
-
-        if self._script_p and self._script_p.status() == 'running':
-            pid = self._script_p.pid
-            try:
-                self.logger.debug('Killing script process {}'.format(pid))
-                os.kill(pid, signal.SIGKILL)
-            except OSError as e:
-                self.logger.error('An error occured when attempting to '
-                                  'kill {}: {}'.format(pid, e))
-
-        if os.path.isdir(self._image_internals_path):
-            self.logger.debug('Removing image internals '
-                              '{}'.format(self._image_internals_path))
-            shutil.rmtree(self._image_internals_path)
+        self._destroy()
 
     @remote
-    def start(self, request, image_name, rows=24, cols=80):
-        self._image_internals_path = '/tmp/{}'.format(image_name)
+    async def start(self, request, image_id):
+        """"""
 
-        image_full_path = '{}/{}.img.gz'.format(options.dominion_workspace,
-                                                image_name)
-
-        if not os.path.isfile(image_full_path):
-            request.ret(IMAGE_DOES_NOT_EXIST)
-
-        request.ret_and_continue(IMAGE_IS_PREPARING)
-
-        self.logger.info('Uncompressing image {}'.format(image_name))
-
-        ret, _, err = yield util.execute_async(
-            ['uncompress_image.sh', image_name], {
-                'DOMINION_WORKSPACE': options.dominion_workspace,
-                'PATH': os.getenv('PATH'),
-            }
-        )
-
-        if ret:
-            self.logger.error('An error occurred when uncompressing the image '
-                              'named {}: {}'.format(err, image_name))
-            request.ret(IMAGE_COULD_NOT_BE_PREPARED)
-
-        pid, fd = pty.fork()
-        if pid == 0:  # child process
-            os.chdir(self._image_internals_path)
-
-            cmd = [
-                'docker-qemu.sh',
-                '-e IMAGE={}.img'.format(image_name),
-                '-n', image_name,
-            ]
-
-            env = {
-                'COLUMNS': str(cols),
-                'LINES': str(rows),
-                'PATH': os.environ['PATH'],
-                'TERM': 'vt220',
-            }
-            os.execvpe(cmd[0], cmd, env)
-        else:  # parent process
-            self.logger.debug('docker-qemu.sh started with pid {}'.format(pid))
-
-            self._fd = fd
-            self._script_p = psutil.Process(pid)
-
-            attempts_number = 60
-            for i in range(attempts_number):
-                try:
-                    # Image name is also used as a container name
-                    self._client.inspect_container(image_name)
-                    break
-                except docker.errors.NotFound:
-                    yield gen.sleep(1)
-
-            self._container_name = image_name
-
-            fcntl.fcntl(fd, fcntl.F_SETFL, os.O_NONBLOCK)
-            fcntl.ioctl(fd, termios.TIOCSWINSZ,
-                        struct.pack('HHHH', rows, cols, 0, 0))
-
-            def callback(*args, **kwargs):
-                # There can be the Input/output error if the process was
-                # terminated unexpectedly.
-                try:
-                    buf = os.read(self._fd, 65536)
-                except OSError:
-                    self.destroy()
-                    request.ret(IMAGE_TERMINATED)
-
-                request.ret_and_continue(buf.decode('utf8', errors='replace'))
-
-            self.io_loop.add_handler(self._fd, callback, self.io_loop.READ)
-
-    @remote
-    def enter(self, _request, data):
         try:
-            os.write(self._fd, data.encode('utf8'))
-        except (IOError, OSError):
-            self.destroy()
+            self._can_start()
+        except ImageStartingUnavailable:
+            request.ret_error(IMAGE_STARTING_UNAVAILABLE)
+
+        try:
+            self._image_exist(image_id)
+        except ImageDoesNotExist:
+            request.ret_error(IMAGE_DOES_NOT_EXIST)
+
+        container_name = CONTAINER_NAME.format(image_id=image_id)
+        self._qemu = QEMUDocker(container_name)
+
+        image_filename = IMAGE_FILENAME.format(image_id=image_id)
+        image_url = urljoin(IMAGE_BASE_URL, image_filename)
+
+        env = {
+            'IMAGE_URL': image_url,
+            'ENABLE_VNC_PASSWORD': 'true',
+            'VNC_DISPLAY': self._qemu.vnc_display,
+            'MONITOR_PORT': self._qemu.monitor_port,
+            'SERIAL_PORT': self._qemu.serial_port,
+        }
+        try:
+            self._qemu.run(env)
+        except ContainerAlreadyExists:
+            request.ret_error(CONTAINER_ALREADY_EXIST)
+
+        self.io_loop.add_callback(lambda: self._change_vnc_password(request))
+
+        self._ws_proxy = WebSocketProxy(self._qemu.vnc_port)
+        self.io_loop.add_callback(lambda: self._run_websocket_proxy(request))
+
+        request.ret_and_continue({
+            'ws_proxy_port': self._ws_proxy.port,
+            'vnc_password': self._qemu.vnc_password,
+        })
 
 
 class Application(tornado.web.Application):
+    """The class of tornado application. """
+
     def __init__(self):
         handlers = [
-            (r'/orion/token/' + TOKEN_PATTERN, TermSocketHandler),
+            (r'/orion/token/' + TOKEN_PATTERN, Orion),
         ]
-        tornado.web.Application.__init__(self, handlers)
+        super().__init__(handlers)
 
 
 def main():
+    """Starts a tornado application. """
+
     if os.getuid() != 0:
         sys.stderr.write('{} must run as root\n'.format(sys.argv[0]))
         sys.exit(1)
 
-    tornado.options.parse_command_line()
+    options.parse_command_line()
 
     IOLoop().start(Application(), options.port)
 
