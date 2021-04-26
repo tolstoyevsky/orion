@@ -37,6 +37,8 @@ class TermSocketHandler(RPCServer):
 
 
 class Application(tornado.web.Application):
+    """The class of tornado application. """
+
     def __init__(self):
         handlers = [
             (r'/orion/token/' + TOKEN_PATTERN, TermSocketHandler),
