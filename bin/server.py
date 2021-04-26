@@ -17,7 +17,6 @@
 import os
 import sys
 
-import tornado.options
 import tornado.web
 from tornado.options import options
 from shirow.ioloop import IOLoop
@@ -53,7 +52,7 @@ def main():
         sys.stderr.write('{} must run as root\n'.format(sys.argv[0]))
         sys.exit(1)
 
-    tornado.options.parse_command_line()
+    options.parse_command_line()
 
     IOLoop().start(Application(), options.port)
 
