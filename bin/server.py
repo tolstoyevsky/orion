@@ -47,6 +47,8 @@ class Application(tornado.web.Application):
 
 
 def main():
+    """Starts a tornado application. """
+
     if os.getuid() != 0:
         sys.stderr.write('{} must run as root\n'.format(sys.argv[0]))
         sys.exit(1)
